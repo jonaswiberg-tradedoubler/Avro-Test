@@ -3,16 +3,19 @@ package avro;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.util.Iterator;
+import java.util.Map;
+
 
 import org.apache.avro.Schema;
 import org.apache.avro.file.DataFileReader;
 import org.apache.avro.file.DataFileWriter;
-import org.apache.avro.generic.GenericData;
-import org.apache.avro.generic.GenericDatumReader;
-import org.apache.avro.generic.GenericDatumWriter;
+import org.apache.avro.generic.*;
 import org.apache.avro.io.Encoder;
 import org.apache.avro.io.EncoderFactory;
 import org.apache.avro.util.Utf8;
+import org.codehaus.jackson.JsonNode;
+import org.codehaus.jackson.map.ObjectMapper;
 
 /**
  * A simple entity used to test Avro schema evolution properties.
@@ -25,8 +28,10 @@ class Employee
 	
 	static {
 		try {
-			SCHEMA = Schema.parse(Employee.class.getResourceAsStream("Employee.avsc"));
-			SCHEMA2 = Schema.parse(Employee.class.getResourceAsStream("Employee2.avsc"));
+			Schema.Parser p = new  Schema.Parser();
+			SCHEMA = p.parse(Employee.class.getResourceAsStream("Employee.avsc"));
+			p = new Schema.Parser();
+			SCHEMA2 = p.parse(Employee.class.getResourceAsStream("Employee2.avsc"));
 		}
 		catch (IOException e)
 		{
@@ -35,11 +40,45 @@ class Employee
 	}
 	
 	private String name;
-	private int age;
+	private Integer age;
 	private String[] mails;
 	private Employee boss;
-	
-	public Employee(String name, int age, String[] emails, Employee b){
+
+	public String getName() {
+		return name;
+	}
+
+	public void setName(String name) {
+		this.name = name;
+	}
+
+	public Integer getAge() {
+		return age;
+	}
+
+	public void setAge(Integer age) {
+		this.age = age;
+	}
+
+	public String[] getMails() {
+		return mails;
+	}
+
+	public void setMails(String[] mails) {
+		this.mails = mails;
+	}
+
+	public Employee getBoss() {
+		return boss;
+	}
+
+	public void setBoss(Employee boss) {
+		this.boss = boss;
+	}
+
+	public Employee() {}
+
+	public Employee(String name, Integer age, String[] emails, Employee b){
 		this.name = name;
 		this.age = age;
 		this.mails = emails;
@@ -70,6 +109,39 @@ class Employee
 		}
 
 	/**
+ 	*
+ 	*/
+	public static GenericData.Record testJsonToAvro() throws IOException {
+		String json = "{\"name\":\"Joe\",\"age\":31,\"mails\":[\"joe@abc.com\",\"joe@gmail.com\"],\"boss\":null}";
+		GenericData.Record record = new GenericData.Record(SCHEMA);
+
+		ObjectMapper mapper = new ObjectMapper();
+		final Employee employee = mapper.readValue(json, Employee.class);
+
+		if ( employee.getName() != null ) {
+			record.put("name", employee.getName());
+		}
+		if ( employee.getAge() != null ) {
+			record.put("age", employee.getAge());
+		}
+		if ( employee.getMails() != null && employee.getMails().length > 0) {
+			int nemails = employee.getMails().length;
+
+			GenericData.Array emails = new GenericData.Array(nemails, SCHEMA.getField("emails").schema());
+			for (int i = 0; i < nemails; ++i)
+				emails.add(new Utf8(employee.getMails()[i]));
+			record.put("emails", emails);
+
+		}
+		if ( employee.getBoss() != null ) {
+			record.put("boss", employee.getBoss());
+		}
+
+		return record;
+
+	}
+
+	/**
 	 * Writes out Java objects into a binary Avro-encoded file
 	 * @param file where to store serialized Avro records
 	 * @param people is an array of objects to be serialized
@@ -88,7 +160,21 @@ class Employee
 
 		   writer.close();
 		}	
-	
+
+	public static void testWrite(File file, GenericData.Record record) throws IOException {
+		GenericDatumWriter datum = new GenericDatumWriter(Employee.SCHEMA);
+		DataFileWriter writer = new DataFileWriter(datum);
+
+		writer.setMeta("Meta-Key0", "Meta-Value0");
+		writer.setMeta("Meta-Key1", "Meta-Value1");
+
+		writer.create(Employee.SCHEMA, file);
+
+		writer.append(record);
+
+		writer.close();
+
+	}
 	/**
 	 * Writes out Java objects into a JSON-encoded file
 	 * @param file where to store serialized Avro records
@@ -152,10 +238,16 @@ class Employee
 		Employee e3 = new Employee("Zoe",21,null,e2);
 		Employee[] all = new Employee[] {e1,e2,e3};
 
+
+
 		File bf = new File("test.avro");
 		File jf = new File("test.json");
+		File bf2 = new File("test2.avro");
+
 		
 		try {
+			GenericData.Record fromJson = testJsonToAvro();
+			testWrite(bf2, fromJson);
 			testWrite(bf,all);
 			testRead(bf);
 			testRead2(bf);
